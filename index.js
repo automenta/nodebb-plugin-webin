@@ -10,198 +10,274 @@ var async = require('async'),
 	db = module.parent.require('./database'),
 	user = module.parent.require('./user'),
 	plugins = module.parent.require('./plugins');
+		
+//https://github.com/danmactough/node-feedparser
+var	feedparser = require('feedparser'); 
 
 
-(function(module) {
+var NAME = 'nodebb-plugin-webin'; //plugin name
+var minPeriodMS = 60 * 1000;
+var updateOnStartup = true;
+
+(function (module) {
 
 	var cronJobs = [];
 
-	cronJobs.push(new cron('* * * * *', function() { pullFeedsInterval(1); }, null, false));
-	cronJobs.push(new cron('0 * * * *', function() { pullFeedsInterval(60); }, null, false));
-	cronJobs.push(new cron('0 0/12 * * *', function() { pullFeedsInterval(60 * 12); }, null, false));
-	cronJobs.push(new cron('0 0 * * *', function() { pullFeedsInterval(60 * 24); }, null, false));
+	cronJobs.push(new cron('* * * * *', function () {
+		updateFeeds();
+	}, null, false));
 
-	module.init = function(app, middleware, controllers) {
+	
+	
+	module.init = function (app, middleware, controllers) {
 
-		app.get('/admin/plugins/rss', middleware.admin.buildHeader, renderAdmin);
-		app.get('/api/admin/plugins/rss', renderAdmin);
+		app.get('/admin/plugins/webin', middleware.admin.buildHeader, renderAdmin);
+		app.get('/api/admin/plugins/webin', renderAdmin);
 
-		app.post('/api/admin/plugins/rss/save', save);
+		app.post('/api/admin/plugins/webin/save', save);
 	};
 
 	function renderAdmin(req, res, next) {
-		admin.getFeeds(function(err, feeds) {
-			if(err) {
+		admin.getFeeds(function (err, feeds) {
+			if (err) {
 				return next(err);
 			}
 
-			res.render('admin/plugins/rss', {feeds:feeds});
+			res.render('admin/plugins/webin', {
+				feeds: feeds
+			});
 		});
 	}
 
 	function save(req, res, next) {
-		deleteFeeds(function(err) {
-			if(err) {
+		deleteFeeds(function (err) {
+			if (err) {
 				return next(err);
 			}
 
-			if(!req.body.feeds) {
-				return res.json({message:'Feeds saved!'});
+			if (!req.body.feeds) {
+				return res.json({
+					message: 'Feeds saved!'
+				});
 			}
 
-			saveFeeds(req.body.feeds, function(err) {
-				if(err) {
+			saveFeeds(req.body.feeds, function (err) {
+				if (err) {
 					return next(err);
 				}
-				res.json({message: 'Feeds saved!'});
+				res.json({
+					message: 'Feeds saved!'
+				});
 			});
 		});
 	}
 
 	function reStartCronJobs() {
 		stopCronJobs();
-		cronJobs.forEach(function(job) {
+		cronJobs.forEach(function (job) {
 			job.start();
 		});
+		if (updateOnStartup)
+			updateFeeds();		
 	}
 
 	function stopCronJobs() {
-		cronJobs.forEach(function(job) {
+		cronJobs.forEach(function (job) {
 			job.stop();
 		});
 	}
 
-	function pullFeedsInterval(interval) {
-		admin.getFeeds(function(err, feeds) {
-			feeds = feeds.filter(function(item) {
-				return parseInt(item.interval, 10) === interval;
+	function updateFeeds() {
+		
+		admin.getFeeds(function (err, feeds) {
+			
+			var now = Date.now();
+			
+			feeds = feeds.filter(function (item) {
+
+				if (!item.lastUpdateTime)
+					return true;
+				else if (now - item.lastUpdateTime > item.interval*1000)
+					return true;
+
+				return false;
 			});
 
 			pullFeeds(feeds);
 		});
 	}
 
-	plugins.isActive('nodebb-plugin-rss', function(err, active) {
-		if(active) {
+	plugins.isActive(NAME, function (err, active) {
+		if (active) {
 			reStartCronJobs();
 		}
 	});
 
 	function pullFeeds(feeds) {
 
+		var now = Date.now();
+		
 		function get(feed, next) {
-
-			if(!feed.lastEntryDate) {
+			
+			if (!feed.lastEntryDate) {
 				feed.lastEntryDate = 0;
 			}
 
-			getFeedByGoogle(feed.url, function(err, entries) {
-				if(err) {
+			getRSS(feed.url, null, function (err, entries) {
+				if (err) {
 					return next(err);
 				}
 
-				if(!entries || !entries.length) {
+				if (!entries || !entries.length) {
 					return next();
 				}
 
 				var mostRecent = feed.lastEntryDate;
 
-				function postEntry(entry) {
-					user.getUidByUsername(feed.username, function(err, uid) {
-						if(err) {
+				function post(posts) {
+					user.getUidByUsername(feed.username, function (err, uid) {
+						if (err) {
 							return next(err);
 						}
 
-						if(!uid) {
+						if (!uid) {
 							uid = 1;
 						}
 
-						var topicData = {
-							uid: uid,
-							title: entry.title,
-							content: toMarkdown(S(entry.content).stripTags('div', 'script', 'span')).s,
-							cid: feed.category
-						};
+						for (var i = 0; i < posts.length; i++) {
+							var entry = posts[i];
+							
+							//TODO add more metadata
+							
+							var topicData = {
+								uid: uid,
+								title: entry.title,
+								content: toMarkdown(S(entry.content).stripTags('div', 'script', 'span')).s,
+								cid: feed.category
+							};
 
-						topics.post(topicData, function(err) {
-							if (err) {
-								winston.error(err.message);
-							}
-						});
+							topics.post(topicData, function (err) {
+								if (err) {
+									winston.error(err.message);
+								}
+							});
+						}
 					});
 				}
 
 				var entryDate;
-				for(var i=0; i<entries.length; ++i) {
-					entryDate = new Date(entries[i].publishedDate).getTime();
-					if(entryDate > feed.lastEntryDate) {
-						if(entryDate > mostRecent) {
-							mostRecent = entryDate;
+				var posts = [];
+				
+				for (var i = 0; i < entries.length; ++i) {
+					
+					/*
+					var maxlen = a['title'].length;
+					if (a['description'] != undefined)
+						maxlen = Math.max(maxlen, a['description'].length);
+
+					var w;
+					if (a['date'])
+						w = new Date(a['date']).getTime();
+					else
+						w = Date.now();
+
+					var x = $N.objNew($N.MD5(a['guid']), a['title']);
+					x.createdAt = w;
+
+					var desc = a['description'];
+					if (desc && (desc.length > 0))
+						$N.objAddDescription(x, desc);
+
+					if (a['georss:point']) {
+						var pp = a['georss:point'];
+						if (pp.length === 2) {
+							$N.objAddGeoLocation(x, pp[0], pp[1]);
 						}
-						postEntry(entries[i]);
+						else {
+							pp = pp['#'].split(' ');
+							$N.objAddGeoLocation(x, pp[0], pp[1]);
+						}
+						a.geolocation = [pp[0], pp[1]];
 					}
+					if (a['geo:lat']) {
+						var lat = parseFloat(a['geo:lat']['#']);
+						var lon = parseFloat(a['geo:long']['#']);
+						$N.objAddGeoLocation(x, lat, lon);
+						a.geolocation = [lat, lon];
+					}
+					$N.objAddTag(x, 'RSSItem');
+					$N.objAddValue(x, 'rssItemURL', a['link']);
+					*/
+					
+					var a = entries[i];
+					var p = { };
+
+					var w;
+					if (a['date'])
+						w = new Date(a['date']).getTime();
+					else
+						w = Date.now();
+					
+					entryDate = w;
+					if (entryDate > feed.lastEntryDate) {
+						feed.lastEntryDate = entryDate;
+					}
+					
+					p.title = a.title;					
+					p.content = a.description;
+					
+					posts.push(p);
 				}
+				
+				if (posts.length > 0)
+					post(posts);
 
 
-				db.setObjectField('nodebb-plugin-rss:feed:' + feed.url, 'lastEntryDate', mostRecent);
+				db.setObjectField(NAME + ':feed:' + feed.url, 'lastEntryDate', mostRecent);
+				db.setObjectField(NAME + ':feed:' + feed.url, 'lastUpdateTime', now);
 
 				next();
 			});
 		}
 
 
-		async.each(feeds, get, function(err) {
+		async.each(feeds, get, function (err) {
 			if (err) {
 				winston.error(err.message);
 			}
 		});
 	}
 
-	function getFeedByGoogle(feedUrl, callback) {
-		request('http://ajax.googleapis.com/ajax/services/feed/load?v=1.0&num=4&q=' + encodeURIComponent(feedUrl), function (err, response, body) {
-
-			if (!err && response.statusCode === 200) {
-
-				var p = JSON.parse(body);
-
-				callback(null, p.responseData.feed.entries);
-			} else {
-				callback(err);
-			}
-		});
-	}
-
-
 	var admin = {};
 
-	admin.menu = function(custom_header, callback) {
+	admin.menu = function (custom_header, callback) {
 		custom_header.plugins.push({
-			route: '/plugins/rss',
+			route: '/plugins/webin',
 			icon: 'fa-rss',
-			name: 'RSS'
+			name: 'Web Input'
 		});
 
 		callback(null, custom_header);
 	};
 
-	admin.getFeeds = function(callback) {
-		db.getSetMembers('nodebb-plugin-rss:feeds', function(err, feedUrls) {
+	admin.getFeeds = function (callback) {
+		db.getSetMembers(NAME + ':feeds', function (err, feedUrls) {
 
-			if(err) {
+			if (err) {
 				return callback(err);
 			}
 
 			function getFeed(feedUrl, next) {
-				db.getObject('nodebb-plugin-rss:feed:' + feedUrl, next);
+				db.getObject(NAME + ':feed:' + feedUrl, next);
 			}
 
-			async.map(feedUrls, getFeed, function(err, results) {
+			async.map(feedUrls, getFeed, function (err, results) {
 
-				if(err) {
+				if (err) {
 					return callback(err);
 				}
 
-				if(results) {
+				if (results) {
 					callback(null, results);
 				} else {
 					callback(null, []);
@@ -212,50 +288,50 @@ var async = require('async'),
 
 	function saveFeeds(feeds, callback) {
 		function saveFeed(feed, next) {
-			if(!feed.url) {
+			if (!feed.url) {
 				return next();
 			}
-			db.setObject('nodebb-plugin-rss:feed:' + feed.url, feed);
-			db.setAdd('nodebb-plugin-rss:feeds', feed.url);
+			db.setObject(NAME + ':feed:' + feed.url, feed);
+			db.setAdd(NAME + ':feeds', feed.url);
 			next();
 		}
 
-		async.each(feeds, saveFeed, function(err) {
+		async.each(feeds, saveFeed, function (err) {
 			callback(err);
 		});
 	}
 
 	function deleteFeeds(callback) {
-		db.getSetMembers('nodebb-plugin-rss:feeds', function(err, feeds) {
-			if(err) {
+		db.getSetMembers(NAME + ':feeds', function (err, feeds) {
+			if (err) {
 				return callback(err);
 			}
 
-			if(!feeds) {
+			if (!feeds) {
 				return callback();
 			}
 
 			function deleteFeed(key, next) {
-				db.delete('nodebb-plugin-rss:feed:' + key);
-				db.setRemove('nodebb-plugin-rss:feeds', key);
+				db.delete(NAME + ':feed:' + key);
+				db.setRemove(NAME + ':feeds', key);
 				next();
 			}
 
-			async.each(feeds, deleteFeed, function(err) {
+			async.each(feeds, deleteFeed, function (err) {
 				callback(err);
 			});
 
 		});
 	}
 
-	admin.activate = function(id) {
-		if (id === 'nodebb-plugin-rss') {
+	admin.activate = function (id) {
+		if (id === NAME) {
 			reStartCronJobs();
 		}
 	};
 
-	admin.deactivate = function(id) {
-		if (id === 'nodebb-plugin-rss') {
+	admin.deactivate = function (id) {
+		if (id === NAME) {
 			stopCronJobs();
 		}
 	};
@@ -265,3 +341,57 @@ var async = require('async'),
 }(module.exports));
 
 
+var getRSS = function (url, perArticle, whenFinished /*, onlyItemsAfter*/ ) {
+
+	if (!process)
+		process = function (x) {
+			return x;
+		};
+
+	var fp = new feedparser();
+
+	var articles = [];
+	
+	request(url).pipe(fp)
+		.on('error', function (error) {
+			// always handle errors
+			//console.log('RSS request error: ' + url + ' :' + error);
+			whenFinished(error, null);			
+		}).on('meta', function (data) {
+			// always handle errors
+			//onArticle(data);
+			//console.log(data, 'META');
+		}).on('readable', function () {
+			var stream = this,
+				item;
+			while (item = stream.read()) {
+				//console.log('Got article: %s', item.title || item.description);
+				//onArticle(item);
+
+				if (perArticle)
+					item = perArticle(item);
+				articles.push(item);
+			}
+		}).on('end', function () {
+			if (whenFinished) {
+				whenFinished(null, articles);
+			}
+		}).resume();
+
+};
+
+/*
+function getFeedByGoogle(feedUrl, callback) {
+	request('http://ajax.googleapis.com/ajax/services/feed/load?v=1.0&num=4&q=' + encodeURIComponent(feedUrl), function (err, response, body) {
+
+		if (!err && response.statusCode === 200) {
+
+			var p = JSON.parse(body);
+
+			callback(null, p.responseData.feed.entries);
+		} else {
+			callback(err);
+		}
+	});
+}
+*/

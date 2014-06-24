@@ -1,8 +1,8 @@
 {
-    "id": "nodebb-plugin-rss",
-    "name": "RSS Feed",
-    "description": "A RSS parser for NodeBB",
-    "url": "https://github.com/barisusakli/nodebb-plugin-rss",
+    "id": "nodebb-plugin-webin",
+    "name": "Web Input",
+    "description": "Web data imports for NodeBB: HTML, RSS, iCal, etc...",
+    "url": "https://github.com/automenta/nodebb-plugin-webin",
     "library": "./index.js",
     "hooks": [
         { "hook": "action:app.load", "method": "init" },

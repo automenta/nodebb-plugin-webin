@@ -1,12 +1,17 @@
-# NodeBB RSS Parser
+# NodeBB Web Input plugin
+(Forked from the nodebb-plugin-rss module https://github.com/barisusakli/nodebb-plugin-rss)
 
-This NodeBB plugin uses the [Google Feed API](https://developers.google.com/feed/) to pull RSS feeds and create topics in predefined categories.
+This NodeBB plugin imports data from:
+* RSS (via the Feedparser module)
 
-To customise options for the parser, please consult the "RSS" page in the administration panel, under the "Plugins" heading.
+Coming soon:
+* iCal (via iCal Module)
+
+To customise options for the parser, open the "Web In" page in the administration panel, under the "Plugins" heading.
 
 ## Installation
 
-    npm install nodebb-plugin-rss
+	npm install nodebb-plugin-webin
 
 ## Usage
 
@@ -18,3 +23,5 @@ To customise options for the parser, please consult the "RSS" page in the admini
 4. Type in the username you want to post as
 5. Select the interval to query the RSS feed
 6. Click Save.
+
+

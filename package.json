@@ -1,22 +1,36 @@
 {
-  "name": "nodebb-plugin-rss",
-  "version": "0.1.10",
-  "description": "A RSS Plugin to pull feeds and post them in to categories",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [
+	"name": "nodebb-plugin-webin",
+	"version": "0.0.1",
+	"description": "NodeBB Web data imports for NodeBB: HTML, RSS, iCal, etc...",
+	"main": "index.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"keywords": [
     "nodebb",
     "plugin",
-    "rss"
+    "rss",
+		"ical",
+		"html",
+		"http",
+		"atom"
   ],
-  "author": "Baris Usakli <baris@designcreateplay.com>",
-  "license": "BSD-2-Clause",
-  "dependencies": {
-    "request": "^2.34.0",
-    "cron": "~1.0.1",
-    "to-markdown": "0.0.1",
-    "string": "~1.7.0"
-  }
+	"contributors": [{
+			"name": "Baris Usakli",
+			"email": "baris@designcreateplay.com"
+  },
+		{
+			"name": "SeH",
+			"email": "automenta@gmail.com"
+				   }
+				  ],
+	"license": "BSD-2-Clause",
+	"dependencies": {
+		"request": "^2.34.0",
+		"cron": "~1.0.1",
+		"to-markdown": "0.0.1",
+		"string": "~1.7.0",
+		"feedparser": ""
+	},
+	"_id": "nodebb-plugin-rssinput@0.0.1"
 }
